@@ -33,11 +33,11 @@ import org.schabi.newpipe.util.OnClickGesture;
 import java.util.List;
 
 import icepick.State;
-import io.reactivex.Flowable;
-import io.reactivex.Single;
-import io.reactivex.android.schedulers.AndroidSchedulers;
-import io.reactivex.disposables.CompositeDisposable;
-import io.reactivex.disposables.Disposable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.disposables.Disposable;
 
 public final class BookmarkFragment extends BaseLocalListFragment<List<PlaylistLocalItem>, Void> {
     @State
@@ -265,15 +265,14 @@ public final class BookmarkFragment extends BaseLocalListFragment<List<PlaylistL
     }
 
     private void showLocalDialog(final PlaylistMetadataEntry selectedItem) {
-        View dialogView = View.inflate(getContext(), R.layout.dialog_bookmark, null);
-        EditText editText = dialogView.findViewById(R.id.playlist_name_edit_text);
+        final View dialogView = View.inflate(getContext(), R.layout.dialog_bookmark, null);
+        final EditText editText = dialogView.findViewById(R.id.playlist_name_edit_text);
         editText.setText(selectedItem.name);
 
-        Builder builder = new AlertDialog.Builder(activity);
+        final Builder builder = new AlertDialog.Builder(activity);
         builder.setView(dialogView)
-                .setPositiveButton(R.string.rename_playlist, (dialog, which) -> {
-                    changeLocalPlaylistName(selectedItem.uid, editText.getText().toString());
-                })
+                .setPositiveButton(R.string.rename_playlist, (dialog, which) ->
+                        changeLocalPlaylistName(selectedItem.uid, editText.getText().toString()))
                 .setNegativeButton(R.string.cancel, null)
                 .setNeutralButton(R.string.delete, (dialog, which) -> {
                     showDeleteDialog(selectedItem.name,

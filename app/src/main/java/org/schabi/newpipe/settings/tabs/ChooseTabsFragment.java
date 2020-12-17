@@ -16,9 +16,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.appcompat.widget.AppCompatImageView;
 import androidx.fragment.app.Fragment;
@@ -31,6 +29,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import org.schabi.newpipe.R;
 import org.schabi.newpipe.extractor.NewPipe;
 import org.schabi.newpipe.report.ErrorActivity;
+import org.schabi.newpipe.report.ErrorInfo;
 import org.schabi.newpipe.report.UserAction;
 import org.schabi.newpipe.settings.SelectChannelFragment;
 import org.schabi.newpipe.settings.SelectKioskFragment;
@@ -92,7 +91,8 @@ public class ChooseTabsFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        updateTitle();
+        ThemeHelper.setTitleToAppCompatActivity(getActivity(),
+                getString(R.string.main_page_content));
     }
 
     @Override
@@ -137,15 +137,6 @@ public class ChooseTabsFragment extends Fragment {
         tabList.addAll(tabsManager.getTabs());
     }
 
-    private void updateTitle() {
-        if (getActivity() instanceof AppCompatActivity) {
-            final ActionBar actionBar = ((AppCompatActivity) getActivity()).getSupportActionBar();
-            if (actionBar != null) {
-                actionBar.setTitle(R.string.main_page_content);
-            }
-        }
-    }
-
     private void saveChanges() {
         tabsManager.saveTabs(tabList);
     }
@@ -173,7 +164,7 @@ public class ChooseTabsFragment extends Fragment {
                 return;
             }
 
-            Dialog.OnClickListener actionListener = (dialog, which) -> {
+            final Dialog.OnClickListener actionListener = (dialog, which) -> {
                 final ChooseTabListItem selected = availableTabs[which];
                 addTab(selected.tabId);
             };
@@ -194,26 +185,26 @@ public class ChooseTabsFragment extends Fragment {
         if (type == null) {
             ErrorActivity.reportError(requireContext(),
                     new IllegalStateException("Tab id not found: " + tabId), null, null,
-                    ErrorActivity.ErrorInfo.make(UserAction.SOMETHING_ELSE, "none",
+                    ErrorInfo.make(UserAction.SOMETHING_ELSE, "none",
                             "Choosing tabs on settings", 0));
             return;
         }
 
         switch (type) {
             case KIOSK:
-                SelectKioskFragment selectKioskFragment = new SelectKioskFragment();
+                final SelectKioskFragment selectKioskFragment = new SelectKioskFragment();
                 selectKioskFragment.setOnSelectedListener((serviceId, kioskId, kioskName) ->
                         addTab(new Tab.KioskTab(serviceId, kioskId)));
                 selectKioskFragment.show(requireFragmentManager(), "select_kiosk");
                 return;
             case CHANNEL:
-                SelectChannelFragment selectChannelFragment = new SelectChannelFragment();
+                final SelectChannelFragment selectChannelFragment = new SelectChannelFragment();
                 selectChannelFragment.setOnSelectedListener((serviceId, url, name) ->
                         addTab(new Tab.ChannelTab(serviceId, url, name)));
                 selectChannelFragment.show(requireFragmentManager(), "select_channel");
                 return;
             case PLAYLIST:
-                SelectPlaylistFragment selectPlaylistFragment = new SelectPlaylistFragment();
+                final SelectPlaylistFragment selectPlaylistFragment = new SelectPlaylistFragment();
                 selectPlaylistFragment.setOnSelectedListener(
                         new SelectPlaylistFragment.OnSelectedListener() {
                             @Override
@@ -238,7 +229,7 @@ public class ChooseTabsFragment extends Fragment {
     private ChooseTabListItem[] getAvailableTabs(final Context context) {
         final ArrayList<ChooseTabListItem> returnList = new ArrayList<>();
 
-        for (Tab.Type type : Tab.Type.values()) {
+        for (final Tab.Type type : Tab.Type.values()) {
             final Tab tab = type.getTab();
             switch (type) {
                 case BLANK:
@@ -329,7 +320,7 @@ public class ChooseTabsFragment extends Fragment {
 
             @Override
             public void onSwiped(final RecyclerView.ViewHolder viewHolder, final int swipeDir) {
-                int position = viewHolder.getAdapterPosition();
+                final int position = viewHolder.getAdapterPosition();
                 tabList.remove(position);
                 selectedTabsAdapter.notifyItemRemoved(position);
 
@@ -344,7 +335,7 @@ public class ChooseTabsFragment extends Fragment {
     private class SelectedTabsAdapter
             extends RecyclerView.Adapter<ChooseTabsFragment.SelectedTabsAdapter.TabViewHolder> {
         private final LayoutInflater inflater;
-        private ItemTouchHelper itemTouchHelper;
+        private final ItemTouchHelper itemTouchHelper;
 
         SelectedTabsAdapter(final Context context, final ItemTouchHelper itemTouchHelper) {
             this.itemTouchHelper = itemTouchHelper;
@@ -377,9 +368,9 @@ public class ChooseTabsFragment extends Fragment {
         }
 
         class TabViewHolder extends RecyclerView.ViewHolder {
-            private AppCompatImageView tabIconView;
-            private TextView tabNameView;
-            private ImageView handle;
+            private final AppCompatImageView tabIconView;
+            private final TextView tabNameView;
+            private final ImageView handle;
 
             TabViewHolder(final View itemView) {
                 super(itemView);

@@ -31,8 +31,10 @@ import org.schabi.newpipe.R;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.fragments.OnScrollBelowItemsListener;
 import org.schabi.newpipe.local.dialog.PlaylistAppendDialog;
+import org.schabi.newpipe.local.dialog.PlaylistCreationDialog;
 import org.schabi.newpipe.player.event.PlayerEventListener;
 import org.schabi.newpipe.player.helper.PlaybackParameterDialog;
+import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.PlayQueueAdapter;
 import org.schabi.newpipe.player.playqueue.PlayQueueItem;
 import org.schabi.newpipe.player.playqueue.PlayQueueItemBuilder;
@@ -40,6 +42,7 @@ import org.schabi.newpipe.player.playqueue.PlayQueueItemHolder;
 import org.schabi.newpipe.player.playqueue.PlayQueueItemTouchCallback;
 import org.schabi.newpipe.util.Localization;
 import org.schabi.newpipe.util.NavigationHelper;
+import org.schabi.newpipe.util.PermissionHelper;
 import org.schabi.newpipe.util.ThemeHelper;
 
 import java.util.Collections;
@@ -108,9 +111,8 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
 
     public abstract int getPlayerOptionMenuResource();
 
-    public abstract boolean onPlayerOptionSelected(MenuItem item);
+    public abstract void setupMenu(Menu m);
 
-    public abstract Intent getPlayerShutdownIntent();
     ////////////////////////////////////////////////////////////////////////////
     // Activity Lifecycle
     ////////////////////////////////////////////////////////////////////////////
@@ -152,6 +154,13 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
         return true;
     }
 
+    // Allow to setup visibility of menuItems
+    @Override
+    public boolean onPrepareOptionsMenu(final Menu m) {
+        setupMenu(m);
+        return super.onPrepareOptionsMenu(m);
+    }
+
     @Override
     public boolean onOptionsItemSelected(final MenuItem item) {
         switch (item.getItemId()) {
@@ -175,29 +184,28 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
                 return true;
             case R.id.action_switch_main:
                 this.player.setRecovery();
-                getApplicationContext().sendBroadcast(getPlayerShutdownIntent());
-                getApplicationContext().startActivity(
-                        getSwitchIntent(MainVideoPlayer.class)
-                                .putExtra(BasePlayer.START_PAUSED, !this.player.isPlaying())
-                );
+                NavigationHelper.playOnMainPlayer(this, player.getPlayQueue(), true);
+                return true;
+            case R.id.action_switch_popup:
+                if (PermissionHelper.isPopupEnabled(this)) {
+                    this.player.setRecovery();
+                    NavigationHelper.playOnPopupPlayer(this, player.playQueue, true);
+                } else {
+                    PermissionHelper.showPopupEnablementToast(this);
+                }
+                return true;
+            case R.id.action_switch_background:
+                this.player.setRecovery();
+                NavigationHelper.playOnBackgroundPlayer(this, player.playQueue, true);
                 return true;
         }
-        return onPlayerOptionSelected(item) || super.onOptionsItemSelected(item);
+        return super.onOptionsItemSelected(item);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         unbind();
-    }
-
-    protected Intent getSwitchIntent(final Class clazz) {
-        return NavigationHelper.getPlayerIntent(getApplicationContext(), clazz,
-                this.player.getPlayQueue(), this.player.getRepeatMode(),
-                this.player.getPlaybackSpeed(), this.player.getPlaybackPitch(),
-                this.player.getPlaybackSkipSilence(), null, false, false, this.player.isMuted())
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(BasePlayer.START_PAUSED, !this.player.isPlaying());
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -247,6 +255,8 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
 
                 if (service instanceof PlayerServiceBinder) {
                     player = ((PlayerServiceBinder) service).getPlayerInstance();
+                } else if (service instanceof MainPlayer.LocalBinder) {
+                    player = ((MainPlayer.LocalBinder) service).getPlayer();
                 }
 
                 if (player == null || player.getPlayQueue() == null
@@ -346,7 +356,9 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
         final MenuItem detail = popupMenu.getMenu().add(RECYCLER_ITEM_POPUP_MENU_GROUP_ID, 1,
                 Menu.NONE, R.string.play_queue_stream_detail);
         detail.setOnMenuItemClickListener(menuItem -> {
-            onOpenDetail(item.getServiceId(), item.getUrl(), item.getTitle());
+            // playQueue is null since we don't want any queue change
+            NavigationHelper.openVideoDetail(this, item.getServiceId(), item.getUrl(),
+                    item.getTitle(), null, false);
             return true;
         });
 
@@ -433,11 +445,6 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
         };
     }
 
-    private void onOpenDetail(final int serviceId, final String videoUrl,
-                              final String videoTitle) {
-        NavigationHelper.openVideoDetail(this, serviceId, videoUrl, videoTitle);
-    }
-
     private void scrollToSelected() {
         if (player == null) {
             return;
@@ -500,7 +507,7 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
             return;
         }
         PlaybackParameterDialog.newInstance(player.getPlaybackSpeed(), player.getPlaybackPitch(),
-                player.getPlaybackSkipSilence()).show(getSupportFragmentManager(), getTag());
+                player.getPlaybackSkipSilence(), this).show(getSupportFragmentManager(), getTag());
     }
 
     @Override
@@ -551,8 +558,13 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
     }
 
     private void openPlaylistAppendDialog(final List<PlayQueueItem> playlist) {
-        PlaylistAppendDialog.fromPlayQueueItems(playlist)
-                .show(getSupportFragmentManager(), getTag());
+        final PlaylistAppendDialog d = PlaylistAppendDialog.fromPlayQueueItems(playlist);
+
+        PlaylistAppendDialog.onPlaylistFound(getApplicationContext(),
+            () -> d.show(getSupportFragmentManager(), getTag()),
+            () -> PlaylistCreationDialog.newInstance(d)
+                    .show(getSupportFragmentManager(), getTag()
+        ));
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -560,7 +572,7 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
     ////////////////////////////////////////////////////////////////////////////
 
     private void shareUrl(final String subject, final String url) {
-        Intent intent = new Intent(Intent.ACTION_SEND);
+        final Intent intent = new Intent(Intent.ACTION_SEND);
         intent.setType("text/plain");
         intent.putExtra(Intent.EXTRA_SUBJECT, subject);
         intent.putExtra(Intent.EXTRA_TEXT, url);
@@ -570,6 +582,10 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
     ////////////////////////////////////////////////////////////////////////////
     // Binding Service Listener
     ////////////////////////////////////////////////////////////////////////////
+
+    @Override
+    public void onQueueUpdate(final PlayQueue queue) {
+    }
 
     @Override
     public void onPlaybackUpdate(final int state, final int repeatMode, final boolean shuffled,
@@ -602,7 +618,7 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
             progressLiveSync.setClickable(!player.isLiveEdge());
         }
 
-        // this will make shure progressCurrentTime has the same width as progressEndTime
+        // this will make sure progressCurrentTime has the same width as progressEndTime
         final ViewGroup.LayoutParams endTimeParams = progressEndTime.getLayoutParams();
         final ViewGroup.LayoutParams currentTimeParams = progressCurrentTime.getLayoutParams();
         currentTimeParams.width = progressEndTime.getWidth();
@@ -610,7 +626,7 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
     }
 
     @Override
-    public void onMetadataUpdate(final StreamInfo info) {
+    public void onMetadataUpdate(final StreamInfo info, final PlayQueue queue) {
         if (info != null) {
             metadataTitle.setText(info.getName());
             metadataArtist.setText(info.getUploaderName());
@@ -710,7 +726,7 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
 
     private void onMaybeMuteChanged() {
         if (menu != null && player != null) {
-            MenuItem item = menu.findItem(R.id.action_mute);
+            final MenuItem item = menu.findItem(R.id.action_mute);
 
             //Change the mute-button item in ActionBar
             //1) Text change:
@@ -718,11 +734,10 @@ public abstract class ServicePlayerActivity extends AppCompatActivity
 
             //2) Icon change accordingly to current App Theme
             // using rootView.getContext() because getApplicationContext() didn't work
-            item.setIcon(player.isMuted()
-                    ? ThemeHelper.resolveResourceIdFromAttr(rootView.getContext(),
-                            R.attr.ic_volume_off)
-                    : ThemeHelper.resolveResourceIdFromAttr(rootView.getContext(),
-                            R.attr.ic_volume_up));
+            item.setIcon(ThemeHelper.resolveResourceIdFromAttr(rootView.getContext(),
+                    player.isMuted()
+                            ? R.attr.ic_volume_off
+                            : R.attr.ic_volume_up));
         }
     }
 }

@@ -51,13 +51,14 @@ import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.suggestion.SuggestionExtractor;
 import org.schabi.newpipe.report.ErrorActivity;
+import org.schabi.newpipe.report.ErrorInfo;
 import org.schabi.newpipe.report.UserAction;
 
 import java.util.Collections;
 import java.util.List;
 
-import io.reactivex.Maybe;
-import io.reactivex.Single;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
 
 public final class ExtractorHelper {
     private static final String TAG = ExtractorHelper.class.getSimpleName();
@@ -101,7 +102,7 @@ public final class ExtractorHelper {
     public static Single<List<String>> suggestionsFor(final int serviceId, final String query) {
         checkServiceId(serviceId);
         return Single.fromCallable(() -> {
-            SuggestionExtractor extractor = NewPipe.getService(serviceId)
+            final SuggestionExtractor extractor = NewPipe.getService(serviceId)
                     .getSuggestionExtractor();
             return extractor != null
                     ? extractor.suggestionList(query)
@@ -212,10 +213,10 @@ public final class ExtractorHelper {
                                                          final InfoItem.InfoType infoType,
                                                          final Single<I> loadFromNetwork) {
         checkServiceId(serviceId);
-        Single<I> actualLoadFromNetwork = loadFromNetwork
+        final Single<I> actualLoadFromNetwork = loadFromNetwork
                 .doOnSuccess(info -> CACHE.putInfo(serviceId, url, info, infoType));
 
-        Single<I> load;
+        final Single<I> load;
         if (forceLoad) {
             CACHE.removeInfo(serviceId, url, infoType);
             load = actualLoadFromNetwork;
@@ -243,7 +244,7 @@ public final class ExtractorHelper {
         checkServiceId(serviceId);
         return Maybe.defer(() -> {
             //noinspection unchecked
-            I info = (I) CACHE.getFromKey(serviceId, url, infoType);
+            final I info = (I) CACHE.getFromKey(serviceId, url, infoType);
             if (MainActivity.DEBUG) {
                 Log.d(TAG, "loadFromCache() called, info > " + info);
             }
@@ -283,7 +284,7 @@ public final class ExtractorHelper {
             if (exception instanceof ReCaptchaException) {
                 Toast.makeText(context, R.string.recaptcha_request_toast, Toast.LENGTH_LONG).show();
                 // Starting ReCaptcha Challenge Activity
-                Intent intent = new Intent(context, ReCaptchaActivity.class);
+                final Intent intent = new Intent(context, ReCaptchaActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 context.startActivity(intent);
             } else if (ExceptionUtils.isNetworkRelated(exception)) {
@@ -293,12 +294,12 @@ public final class ExtractorHelper {
             } else if (exception instanceof ContentNotSupportedException) {
                 Toast.makeText(context, R.string.content_not_supported, Toast.LENGTH_LONG).show();
             } else {
-                int errorId = exception instanceof YoutubeStreamExtractor.DecryptException
-                        ? R.string.youtube_signature_decryption_error
+                final int errorId = exception instanceof YoutubeStreamExtractor.DeobfuscateException
+                        ? R.string.youtube_signature_deobfuscation_error
                         : exception instanceof ParsingException
                         ? R.string.parsing_error : R.string.general_error;
                 ErrorActivity.reportError(handler, context, exception, MainActivity.class, null,
-                        ErrorActivity.ErrorInfo.make(userAction, serviceId == -1 ? "none"
+                        ErrorInfo.make(userAction, serviceId == -1 ? "none"
                                 : NewPipe.getNameOfService(serviceId),
                                 url + (optionalErrorMessage == null ? ""
                                         : optionalErrorMessage), errorId));

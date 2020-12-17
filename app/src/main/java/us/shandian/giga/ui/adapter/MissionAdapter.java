@@ -1,13 +1,11 @@
 package us.shandian.giga.ui.adapter;
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
@@ -26,7 +24,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.FileProvider;
@@ -42,15 +39,20 @@ import org.schabi.newpipe.BuildConfig;
 import org.schabi.newpipe.R;
 import org.schabi.newpipe.extractor.NewPipe;
 import org.schabi.newpipe.report.ErrorActivity;
+import org.schabi.newpipe.report.ErrorInfo;
 import org.schabi.newpipe.report.UserAction;
 import org.schabi.newpipe.util.NavigationHelper;
 
 import java.io.File;
-import java.lang.ref.WeakReference;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import us.shandian.giga.get.DownloadMission;
 import us.shandian.giga.get.FinishedMission;
 import us.shandian.giga.get.Mission;
@@ -95,31 +97,33 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
         ALGORITHMS.put(R.id.sha1, "SHA1");
     }
 
-    private Context mContext;
-    private LayoutInflater mInflater;
-    private DownloadManager mDownloadManager;
-    private Deleter mDeleter;
+    private final Context mContext;
+    private final LayoutInflater mInflater;
+    private final DownloadManager mDownloadManager;
+    private final Deleter mDeleter;
     private int mLayout;
-    private DownloadManager.MissionIterator mIterator;
-    private ArrayList<ViewHolderItem> mPendingDownloadsItems = new ArrayList<>();
-    private Handler mHandler;
+    private final DownloadManager.MissionIterator mIterator;
+    private final ArrayList<ViewHolderItem> mPendingDownloadsItems = new ArrayList<>();
+    private final Handler mHandler;
     private MenuItem mClear;
     private MenuItem mStartButton;
     private MenuItem mPauseButton;
-    private View mEmptyMessage;
+    private final View mEmptyMessage;
     private RecoverHelper mRecover;
-    private View mView;
-    private ArrayList<Mission> mHidden;
+    private final View mView;
+    private final ArrayList<Mission> mHidden;
     private Snackbar mSnackbar;
 
     private final Runnable rUpdater = this::updater;
     private final Runnable rDelete = this::deleteFinishedDownloads;
 
+    private final CompositeDisposable compositeDisposable = new CompositeDisposable();
+
     public MissionAdapter(Context context, @NonNull DownloadManager downloadManager, View emptyMessage, View root) {
         mContext = context;
         mDownloadManager = downloadManager;
 
-        mInflater = (LayoutInflater) mContext.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        mInflater = LayoutInflater.from(mContext);
         mLayout = R.layout.mission_item;
 
         mHandler = new Handler(context.getMainLooper());
@@ -210,7 +214,7 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
         } else {
             h.progress.setMarquee(false);
             h.status.setText("100%");
-            h.progress.setProgress(1f);
+            h.progress.setProgress(1.0f);
             h.size.setText(Utility.formatBytes(item.mission.length));
         }
     }
@@ -243,7 +247,7 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
         double progress;
         if (mission.unknownLength) {
             progress = Double.NaN;
-            h.progress.setProgress(0f);
+            h.progress.setProgress(0.0f);
         } else {
             progress = done / length;
         }
@@ -302,15 +306,13 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
             float averageSpeed = speed;
 
             if (h.lastSpeedIdx < 0) {
-                for (int i = 0; i < h.lastSpeed.length; i++) {
-                    h.lastSpeed[i] = speed;
-                }
+                Arrays.fill(h.lastSpeed, speed);
                 h.lastSpeedIdx = 0;
             } else {
                 for (int i = 0; i < h.lastSpeed.length; i++) {
                     averageSpeed += h.lastSpeed[i];
                 }
-                averageSpeed /= h.lastSpeed.length + 1f;
+                averageSpeed /= h.lastSpeed.length + 1.0f;
             }
 
             String speedStr = Utility.formatSpeed(averageSpeed);
@@ -574,7 +576,7 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
                 mission.errObject,
                 null,
                 null,
-                ErrorActivity.ErrorInfo.make(action, service, request.toString(), reason)
+                ErrorInfo.make(action, service, request.toString(), reason)
         );
     }
 
@@ -676,7 +678,30 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
                 return true;
             case R.id.md5:
             case R.id.sha1:
-                new ChecksumTask(mContext).execute(h.item.mission.storage, ALGORITHMS.get(id));
+                ProgressDialog progressDialog = null;
+                if (mContext != null) {
+                    // Create dialog
+                    progressDialog = new ProgressDialog(mContext);
+                    progressDialog.setCancelable(false);
+                    progressDialog.setMessage(mContext.getString(R.string.msg_wait));
+                    progressDialog.show();
+                }
+                final ProgressDialog finalProgressDialog = progressDialog;
+                final StoredFileHelper storage = h.item.mission.storage;
+                compositeDisposable.add(
+                        Observable.fromCallable(() -> Utility.checksum(storage, ALGORITHMS.get(id)))
+                                .subscribeOn(Schedulers.computation())
+                                .observeOn(AndroidSchedulers.mainThread())
+                                .subscribe(result -> {
+                                    if (finalProgressDialog != null) {
+                                        Utility.copyToClipboard(finalProgressDialog.getContext(),
+                                                result);
+                                        if (mContext != null) {
+                                            finalProgressDialog.dismiss();
+                                        }
+                                    }
+                                })
+                );
                 return true;
             case R.id.source:
                 /*Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(h.item.mission.source));
@@ -759,8 +784,8 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
         }
     }
 
-
     public void onDestroy() {
+        compositeDisposable.dispose();
         mDeleter.dispose();
     }
 
@@ -952,7 +977,7 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
         }
     }
 
-    class ViewHolderHeader extends RecyclerView.ViewHolder {
+    static class ViewHolderHeader extends RecyclerView.ViewHolder {
         TextView header;
 
         ViewHolderHeader(View view) {
@@ -961,60 +986,7 @@ public class MissionAdapter extends Adapter<ViewHolder> implements Handler.Callb
         }
     }
 
-
-    static class ChecksumTask extends AsyncTask<Object, Void, String> {
-        ProgressDialog progressDialog;
-        WeakReference<Activity> weakReference;
-
-        ChecksumTask(@NonNull Context context) {
-            weakReference = new WeakReference<>((Activity) context);
-        }
-
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-
-            Activity activity = getActivity();
-            if (activity != null) {
-                // Create dialog
-                progressDialog = new ProgressDialog(activity);
-                progressDialog.setCancelable(false);
-                progressDialog.setMessage(activity.getString(R.string.msg_wait));
-                progressDialog.show();
-            }
-        }
-
-        @Override
-        protected String doInBackground(Object... params) {
-            return Utility.checksum((StoredFileHelper) params[0], (String) params[1]);
-        }
-
-        @Override
-        protected void onPostExecute(String result) {
-            super.onPostExecute(result);
-
-            if (progressDialog != null) {
-                Utility.copyToClipboard(progressDialog.getContext(), result);
-                if (getActivity() != null) {
-                    progressDialog.dismiss();
-                }
-            }
-        }
-
-        @Nullable
-        private Activity getActivity() {
-            Activity activity = weakReference.get();
-
-            if (activity != null && activity.isFinishing()) {
-                return null;
-            } else {
-                return activity;
-            }
-        }
-    }
-
     public interface RecoverHelper {
         void tryRecover(DownloadMission mission);
     }
-
 }
